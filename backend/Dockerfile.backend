@@ -1,48 +1,19 @@
-# ----------------------------------------------------
-# FASE 1: BUILD - Compilación y Empaquetado
-# Usaremos OpenJDK 17
-# ----------------------------------------------------
-FROM openjdk:17-jdk-slim AS build
+# Usamos una imagen base de Tomcat con Java 17
+FROM tomcat:9.0-jdk17-temurin
 
-# Instalar 'unzip' y herramientas de compilación necesarias
-RUN apt-get update && apt-get install -y unzip
+# IMPORTANTE: Vercel usa la variable de entorno $PORT.
+# Configuramos Tomcat para que escuche en el puerto que Vercel le asigne.
+RUN echo "CATALINA_OPTS=\"\${CATALINA_OPTS} -Dhttp.port=\${PORT}\"" >> /usr/local/tomcat/bin/setenv.sh
 
-# Directorio de trabajo dentro del contenedor
-WORKDIR /app
+# Borramos la aplicación de ejemplo predeterminada de Tomcat
+RUN rm -rf /usr/local/tomcat/webapps/ROOT/
 
-# Copia todo el código fuente y librerías
-# CRÍTICO: Tus archivos .java deben estar en src/java
-COPY src/java ./src/java
-# CRÍTICO: Tus JARs de librerías (incluido el driver de PostgreSQL) deben estar en lib
-COPY lib ./lib
+# Copiamos tu archivo WAR (CONI.war) y lo renombramos a ROOT.war
+# para que se ejecute en la raíz de tu dominio (ej: /)
+COPY dist/CONI.war /usr/local/tomcat/webapps/ROOT.war
 
-# Crear la carpeta donde se compilarán los archivos .class
-RUN mkdir -p build/classes
-
-# COMANDO CRÍTICO: Compilación manual de todos los archivos Java
-# 1. Construye la CLASSPATH con todas las librerías .jar en la carpeta lib
-# 2. Compila todos los archivos .java de forma recursiva
-RUN CLASSPATH=$(echo lib/*.jar | tr ' ' ':') \
-    && javac -d build/classes -cp "$CLASSPATH" src/java/**/*.java
-
-# COMANDO CRÍTICO: Crea el JAR final ejecutable (CONI1.0.jar)
-# El JAR se crea con todos los .class compilados
-RUN jar cfv CONI1.0.jar -C build/classes .
-
-# ----------------------------------------------------
-# FASE 2: RUN - Ejecución del Contenedor Final
-# Usaremos JRE para que el contenedor sea más ligero
-# ----------------------------------------------------
-FROM openjdk:17-jre-slim
-
-# Directorio de trabajo
-WORKDIR /app
-
-# Copia el JAR generado de la fase de 'build'
-COPY --from=build /app/CONI1.0.jar app.jar
-
-# Puerto de la aplicación Java
+# El puerto de Tomcat por defecto es 8080.
 EXPOSE 8080
 
-# Comando para ejecutar la aplicación
-ENTRYPOINT ["java", "-jar", "app.jar"]
+# El comando de inicio es el mismo
+CMD ["catalina.sh", "run"]
